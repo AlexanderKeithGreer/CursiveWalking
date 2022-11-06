@@ -1,38 +1,52 @@
-use cursive::event::Event::Refresh;
-use cursive::views::Dialog;
-use cursive::views::TextContent;
-use cursive::views::TextView;
-use cursive::views::OnEventView;
+use cursive::Cursive;
+use cursive::CursiveRunnable;
+use cursive::views::{Button, Dialog, DummyView, EditView,
+                     LinearLayout, NamedView, SelectView, TextView};
+use cursive::traits::*;
+use std::{thread, time};
 
-use std::clone;
 
-
-fn refesh_no(no: &mut TextContent, incr: &mut u64)
-{
-    *incr = *incr + 1;
-    no.set_content(incr.to_string());
-
-    //let new_no: u64 = (*text).source().parse::<u64>().unwrap() + 1;
-    //no.set_content(new_no.to_string()); //This was a fucking nightmare
+struct Controller {
+    counter : u64,
+    ui_root : CursiveRunnable,
+    sleep_dur : time::Duration,
 }
 
+impl Controller {
+
+    fn run(&mut self) {
+        loop {
+            self.counter += 1;
+            println!("{}...", self.counter);
+
+            self.ui_root.find_name::<TextView>("sole")
+                .expect("Ohhhh")
+                .set_content(self.counter.to_string());
+
+            thread::sleep(self.sleep_dur);
+
+            if (self.counter == 34)
+            {
+                break;
+            }
+        }
+    }
+
+}
+
+
+//Let this be the thread that actually has the view...
 fn main() {
-    let mut siv = cursive::default();
-    let mut txt_view = TextContent::new("0");
-    let mut txt_count = 0;
+    let mut controller = Controller{
+        counter: 0,
+        ui_root: cursive::default(),
+        sleep_dur: time::Duration::from_millis(100),
+    };
 
-    refesh_no(&mut txt_view, &mut txt_count);
 
-    let mut update_view = OnEventView::new(
-                            TextView::new_with_content(txt_view.clone()));
-
-    siv.add_layer(Dialog::around(update_view)
-                 .title("Cursive")
-                 .button("Quit", |n| n.quit()));
-
-    refesh_no(&mut txt_view, &mut txt_count);
-
-    siv.set_fps(10);
-    siv.set_event
-    siv.run();
+    controller.ui_root.add_layer(
+            NamedView::new("sole", TextView::new("Hello cursive-in-a-struct!")));
+    controller.ui_root.set_fps(30);
+    controller.run();
+    controller.ui_root.run();
 }
