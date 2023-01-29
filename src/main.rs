@@ -1,25 +1,13 @@
 use cursive::traits::*;
 use cursive::Vec2;
-use cursive::{Cursive, Printer};
+use cursive::{Printer};
+
 use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-#[derive(Clone)]
-struct CoordItem {
-    x: usize,
-    y: usize,
-    c: char,
-}
-
-impl CoordItem {
-
-    fn new() -> CoordItem {
-        let new_item = CoordItem {x: 0, y: 0, c: ' '};
-        return new_item
-    }
-}
+mod controller;
 
 fn main() {
     // As usual, create the Cursive root
@@ -30,23 +18,47 @@ fn main() {
 
     let (tx_control, rx_view) = mpsc::channel();
     let (tx_view, rx_control) = mpsc::channel();
+    let (tx_dialog, rx_dialog) = mpsc::channel();
 
     siv.set_user_data::<mpsc::Sender<char>>(tx_view);
 
     // We want to refresh the page even when no input is given.
     siv.add_global_callback('q', |s| s.quit());
-    siv.add_global_callback('h', |s| {send_key_to_control(s,'h')});
+    siv.add_global_callback('i', |s| {send_key_to_control(s,'i')});
     siv.add_global_callback('j', |s| {send_key_to_control(s,'j')});
     siv.add_global_callback('k', |s| {send_key_to_control(s,'k')});
     siv.add_global_callback('l', |s| {send_key_to_control(s,'l')});
 
+    siv.add_global_callback('w', |s| {send_key_to_control(s,'w')});
+    siv.add_global_callback('a', |s| {send_key_to_control(s,'a')});
+    siv.add_global_callback('s', |s| {send_key_to_control(s,'s')});
+    siv.add_global_callback('d', |s| {send_key_to_control(s,'d')});
+
     // Generate data in a separate thread.
     thread::spawn(move || {
-        controller_main(&tx_control, &rx_control,cb_sink);
+        controller::controller_main(&tx_control,
+                                    &rx_control, &tx_dialog, cb_sink);
     });
 
     // And sets the view to read from the other end of the channel.
-    siv.add_layer(BufferView::new(1, rx_view).full_screen());
+
+    //siv.add_layer(WorldView::new(3, rx_view).full_screen());
+    /*siv.add_layer(DialogView::new(5, rx_dialog,
+                                    cursive::view::Offset {Absolute(0),Absolute(0)})
+                                .full_width()
+                                .fixed_height(10)
+                                .with_name("Dialog"));
+    */
+    siv.add_layer(
+        cursive::views::LinearLayout::vertical()
+            .child(WorldView::new(3, rx_view)
+                                .full_width()
+                                .full_height())
+            .child(DialogView::new(10, rx_dialog)
+                                .full_width()
+                                .fixed_height(10)
+                                .with_name("Dialog")) );
+
     siv.set_fps(30);
     siv.run();
 }
@@ -65,57 +77,20 @@ fn send_key_to_control (s: &mut cursive::Cursive, c: char) {
 
 }
 
-fn controller_main(tx_control: &mpsc::Sender<CoordItem>,
-                   rx_control: &mpsc::Receiver<char>,
-                   cb_sink: cursive::CbSink) {
-    let mut x = 8;
-    let mut y = 8;
-    let mut key_press: [char; 8] = ['\0'; 8];
-    let mut key_ind = 0;
-
-    loop {
-
-        while let Ok(key_p) = rx_control.try_recv() {
-            key_press[key_ind] = key_p;
-            key_ind += 1;
-        }
-
-        match key_press[key_ind] {
-            'h' => x -= 1,
-            'j' => y += 1,
-            'k' => y -= 1,
-            'l' => x += 1,
-             _  => (),
-        }
-
-
-        let line = CoordItem {x: x, y: y, c: '@'};
-
-        if tx_control.send(line).is_err() {
-            return; //Break out of loop when other side fails
-        }
-        cb_sink.send(Box::new(Cursive::noop)).unwrap();
-        thread::sleep(Duration::from_millis(30));
-        key_press[key_ind] = '\0';
-        key_ind = 0;
-
-    }
-}
-
-// Let's define a buffer view, that shows the last lines from a stream.
-struct BufferView {
+struct WorldView {
     // We'll use a ring buffer
-    buffer: VecDeque<CoordItem>,
+    buffer: VecDeque<controller::CoordItem>,
     // Receiving end of the stream
-    rx_view: mpsc::Receiver<CoordItem>,
+    rx_view: mpsc::Receiver<controller::CoordItem>,
 }
 
-impl BufferView {
+impl WorldView {
     // Creates a new view with the given buffer size
-    fn new(size: usize, rx_view: mpsc::Receiver<CoordItem>) -> Self {
+    fn new(size: usize,
+           rx_view: mpsc::Receiver<controller::CoordItem>) -> Self {
         let mut buffer = VecDeque::new();
-        buffer.resize(size, CoordItem::new());
-        BufferView { buffer, rx_view }
+        buffer.resize(size, controller::CoordItem::new());
+        WorldView { buffer, rx_view }
     }
 
     // Reads available data from the stream into the buffer
@@ -128,7 +103,7 @@ impl BufferView {
     }
 }
 
-impl View for BufferView {
+impl View for WorldView {
     fn layout(&mut self, _: Vec2) {
         // Before drawing, we'll want to update the buffer
         self.update();
@@ -139,10 +114,49 @@ impl View for BufferView {
         for (_i, line) in
             self.buffer.iter().rev().take(printer.size.y).enumerate()
         {
-            if line.y < printer.size.y && line.x < printer.size.x //Does not like overly large numbers
+            if line.get_y() < printer.size.y && line.get_x() < printer.size.x //Does not like overly large numbers
             {
-                printer.print((line.x, line.y), &line.c.to_string());
+                printer.print((line.get_x(), line.get_y()), &line.get_c().to_string());
             }
         }
     }
 }
+
+
+struct DialogView {
+    buffer: VecDeque<String>,
+    rx_text: mpsc::Receiver<String>,
+}
+
+impl DialogView {
+    fn new(size: usize, rx_text: mpsc::Receiver<String>
+            ) -> Self {
+        let mut buffer = VecDeque::new();
+        buffer.resize(size, String::new());
+        DialogView { buffer, rx_text }
+    }
+
+    fn update(&mut self) {
+        while let Ok(line) = self.rx_text.try_recv() {
+            self.buffer.push_back(line);
+            self.buffer.pop_front();
+        }
+    }
+}
+
+impl View for DialogView {
+    fn layout(&mut self, _:Vec2) {
+        self.update()
+    }
+
+    fn draw(&self, printer: &Printer) {
+        for (i, line) in
+            self.buffer.iter().rev().take(printer.size.y).enumerate()
+        {
+            printer.print((0, printer.size.y - 1 - i), line);
+        }
+    }
+
+
+}
+
