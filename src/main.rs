@@ -5,7 +5,6 @@ use cursive::{Printer};
 use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
 
 mod controller;
 
@@ -23,16 +22,14 @@ fn main() {
     siv.set_user_data::<mpsc::Sender<char>>(tx_view);
 
     // We want to refresh the page even when no input is given.
-    siv.add_global_callback('q', |s| s.quit());
-    siv.add_global_callback('i', |s| {send_key_to_control(s,'i')});
-    siv.add_global_callback('j', |s| {send_key_to_control(s,'j')});
-    siv.add_global_callback('k', |s| {send_key_to_control(s,'k')});
-    siv.add_global_callback('l', |s| {send_key_to_control(s,'l')});
+    siv.add_global_callback('X', |s| s.quit());
 
-    siv.add_global_callback('w', |s| {send_key_to_control(s,'w')});
-    siv.add_global_callback('a', |s| {send_key_to_control(s,'a')});
-    siv.add_global_callback('s', |s| {send_key_to_control(s,'s')});
-    siv.add_global_callback('d', |s| {send_key_to_control(s,'d')});
+    let to_control_keys = ['i', 'j','k','l',
+                           'w','a','s','d','W','A','S','D',
+                           'q'];
+    for key in to_control_keys {
+        siv.add_global_callback(key, move |s| {send_key_to_control(s,key)});
+    }
 
     // Generate data in a separate thread.
     thread::spawn(move || {
@@ -51,7 +48,7 @@ fn main() {
     */
     siv.add_layer(
         cursive::views::LinearLayout::vertical()
-            .child(WorldView::new(3, rx_view)
+            .child(WorldView::new(5, rx_view)
                                 .full_width()
                                 .full_height())
             .child(DialogView::new(10, rx_dialog)
